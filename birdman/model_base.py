@@ -27,9 +27,12 @@ class Model:
     :param model_path: Filepath to Stan model
     :type model_path: str
 
-    :param num_iter: Number of posterior draws (used for both warmup and
-        sampling), defaults to 500
+    :param num_iter: Number of posterior sample draws, defaults to 500
     :type num_iter: int
+
+    :param num_warmup: Number of posterior draws used for warmup, defaults to
+        num_iter
+    :type num_warmup: int
 
     :param chains: Number of chains to use in MCMC, defaults to 4
     :type chains: int
@@ -48,12 +51,15 @@ class Model:
         metadata: pd.DataFrame,
         model_path: str,
         num_iter: int = 500,
+        num_warmup: int = None,
         chains: int = 4,
         seed: float = 42,
         parallelize_across: str = "chains"
     ):
         self.table = table
         self.num_iter = num_iter
+        if num_warmup is None:
+            self.num_warmup = num_iter
         self.chains = chains
         self.seed = seed
         self.formula = formula
@@ -131,7 +137,7 @@ class Model:
             chains=self.chains,
             parallel_chains=self.chains,  # run all chains in parallel
             data=self.dat,
-            iter_warmup=self.num_iter,    # use same num iter for warmup
+            iter_warmup=self.num_warmup,
             iter_sampling=self.num_iter,
             seed=self.seed,
             **sampler_args
@@ -170,7 +176,7 @@ class Model:
                 chains=self.chains,
                 parallel_chains=1,            # run all chains in serial
                 data=dat,
-                iter_warmup=self.num_iter,    # use same num iter for warmup
+                iter_warmup=self.num_warmup,
                 iter_sampling=self.num_iter,
                 seed=self.seed,
                 **sampler_args
@@ -197,7 +203,9 @@ class Model:
         alr_params: Sequence[str] = None,
         include_observed_data: bool = False,
         posterior_predictive: str = None,
-        log_likelihood: str = None
+        log_likelihood: str = None,
+        dask_cluster: dask_jobqueue.JobQueueCluster = None,
+        jobs: int = 4
     ) -> az.InferenceData:
         """Convert fitted Stan model into ``arviz`` InferenceData object.
 
@@ -248,6 +256,12 @@ class Model:
             to include in ``arviz`` InferenceData object
         :type log_likelihood: str, optional
 
+        :param dask_cluster: Dask jobqueue to run parallel jobs (optional)
+        :type dask_cluster: dask_jobqueue
+
+        :param jobs: Number of jobs to run in parallel, defaults to 4
+        :type jobs: int
+
         :returns: ``arviz`` InferenceData object with selected values
         :rtype: az.InferenceData
         """
@@ -267,6 +281,8 @@ class Model:
         elif isinstance(self.fit, Sequence):
             fit_to_inference = multiple_fits_to_inference
             args["concatenation_name"] = concatenation_name
+            args["dask_cluster"] = dask_cluster
+            args["jobs"] = jobs
             # TODO: Check that dims and concatenation_match
 
             if alr_params is not None:
